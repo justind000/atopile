@@ -7,6 +7,8 @@ import itertools
 import logging
 from collections import OrderedDict
 from io import StringIO
+from git import Repo
+import os
 
 import natsort
 import rich
@@ -15,7 +17,7 @@ from rich.table import Table
 from toolz import groupby
 
 from atopile import address, errors, components
-from atopile.instance_methods import all_descendants, match_components
+from atopile.instance_methods import all_descendants, match_components, match_modules, get_supers_list, get_parent, get_next_super, iter_parents, match_module_type
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +54,44 @@ def _get_value(addr: address.AddrStr) -> str:
 
 light_row = Style(color="bright_black")
 dark_row = Style(color="white")
+import glob
+import yaml
+import os
 
+def get_entries_from_yaml():
+    entries = []
+    directory = get_project_dir()
+    pattern = f"{directory}/.ato/modules/**/ato.yaml"
+
+    # Use glob to find all 'ato.yaml' files in the directory and its subdirectories
+    for filepath in glob.glob(pattern, recursive=True):
+        # Open and parse the YAML file
+        with open(filepath, 'r') as file:
+            try:
+                data = yaml.safe_load(file)
+                # Check if 'entry' is in the 'builds' -> 'default' section
+                entry = data.get('builds', {}).get('default', {}).get('entry')
+                if entry:
+                    entries.append(entry)
+            except yaml.YAMLError as exc:
+                print(f"Error parsing YAML file {filepath}: {exc}")
+
+    return entries
+
+def get_project_dir():
+    path = os.getcwd()
+    try:
+        # Initialize a Repo object, which represents the Git repository
+        repo = Repo(path, search_parent_directories=True)
+        # Get the top-level directory of the repository
+        git_root = repo.git.rev_parse("--show-toplevel")
+        return git_root
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
+
+# Example usage
+current_path = os.getcwd()
 
 def generate_designator_map(entry_addr: address.AddrStr) -> str:
     """Generate a map between the designator and the component name"""
@@ -61,6 +100,31 @@ def generate_designator_map(entry_addr: address.AddrStr) -> str:
         raise ValueError("Cannot generate a BoM for an instance address.")
 
     all_components = list(filter(match_components, all_descendants(entry_addr)))
+
+    ## Layout Reuse
+    all_modules = list(filter(match_modules, all_descendants(entry_addr)))
+
+    csv_table = StringIO()
+    writer = csv.DictWriter(csv_table, fieldnames=['Package','PackageInstance','Name','Designator'])
+    writer.writeheader()
+
+    package_names = get_entries_from_yaml()
+    package_names = list(address.get_relative_entry_module(p) for p in package_names)
+
+    for module in all_modules:
+        package_type = match_module_type(module,package_names)
+        if package_type:
+            package_components = list(filter(match_components, all_descendants(module)))
+            for comp_addr in package_components:
+                writer.writerow(
+                    {
+                        "Package": package_type,
+                        "PackageInstance": address.get_instance_section(module),
+                        "Name": address.get_instance_section(comp_addr),
+                        "Designator": components.get_designator(comp_addr),
+                    }
+                )
+
 
     # Create tables to print to the terminal and to the disc
     sorted_des_table = Table(show_header=True, header_style="bold green")
@@ -94,8 +158,10 @@ def generate_designator_map(entry_addr: address.AddrStr) -> str:
         )
 
     # Print the table
-    rich.print(sorted_des_table)
-    rich.print(sorted_name_table)
+    # rich.print(sorted_des_table)
+    # rich.print(sorted_name_table)
+
+    return csv_table.getvalue()
 
 
 def generate_bom(entry_addr: address.AddrStr) -> str:

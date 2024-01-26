@@ -129,6 +129,8 @@ def generate_bom(build_args: BuildContext) -> None:
 def generate_designator_map(build_args: BuildContext) -> None:
     """Generate a designator map for the project."""
     atopile.bom.generate_designator_map(build_args.entry)
+    with open(build_args.build_path/"group_map.csv", "w", encoding="utf-8") as f:
+        f.write(atopile.bom.generate_designator_map(build_args.entry))
 
 
 @muster.register("mfg-data", default=False)
