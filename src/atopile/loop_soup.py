@@ -18,6 +18,8 @@ class LoopItem(collections.abc.Iterable[T]):
         self.represents = represents
         self.prev = self
         self.next = self
+        self.branches = []
+        self.branch_root = None
 
     def iter_loop(self, limit: Optional[int] = None) -> Iterator["LoopItem[T]"]:
         """Iterate over the loop"""
@@ -61,7 +63,7 @@ class LoopItem(collections.abc.Iterable[T]):
             b.next = a
             b.prev = a
 
-        # if one is lonely, make it friends with the other`
+        # if one is lonely, make it friends with the other
         elif a.next is a:
             assert a.prev is a
             old_next = b.next
@@ -88,6 +90,18 @@ class LoopItem(collections.abc.Iterable[T]):
                 b.prev = a
                 b_old_prev.next = a_old_next
                 a_old_next.prev = b_old_prev
+
+    @staticmethod
+    def add_branch(root: "LoopItem", branch: "LoopItem") -> None:
+        """Add a branch to a loop"""
+        root.branches.append(branch)
+        branch.branch_root = root
+
+    @staticmethod
+    def remove_branch(root: "LoopItem", branch: "LoopItem") -> None:
+        """Add a hair to a loop"""
+        root.branches.remove(branch)
+        branch.branch_root = root
 
 
 def _simple_return(x: T) -> T:
@@ -119,6 +133,22 @@ class LoopSoup:
     def join(self, a: T, b: T) -> None:
         """Join two things together"""
         LoopItem.join(self.get_loop(a), self.get_loop(b))
+
+    def add_branch(self, root: T, branch: T) -> None:
+        """Add a branch to a loop"""
+        LoopItem.add_branch(self.get_loop(root), self.get_loop(branch))
+
+    def remove_branch(self, root: T, branch: T) -> None:
+        """Remove a branch from a loop"""
+        self.get_loop(root).branches.remove(self.get_loop(branch))
+
+    def collapse_branch(self, branch: T) -> None:
+        """Collaspse a hair into the loop"""
+        current = branch
+        while current is not None:
+            current = self.get_loop(current).branch_root
+            current_root = current.branch_root
+            LoopItem.join(current_root, current)
 
     def groups(self) -> Iterator[tuple[T]]:
         """Return an iterator of groups of things that are connected together"""
