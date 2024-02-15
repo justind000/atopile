@@ -58,14 +58,14 @@ module VoltageDivider:
 
 #### RP2040 Blinky Circuit
 ```python
-import RP2040Kit from "rp2040/rp2040_kit.ato"
-import LEDIndicator from "generics/leds.ato"
+import RP2040Kit from "rp2040/RP2040Kit.ato"
+import LEDIndicatorRed from "generics/leds.ato"
 import LDOReg3V3 from "regulators/regulators.ato"
 import USBCConn from "usb-connectors/usb-connectors.ato"
 
 module Blinky:
     micro_controller = new RP2040Kit
-    led_indicator = new LEDIndicator
+    led_indicator = new LEDIndicatorRed
     voltage_regulator = new LDOReg3V3
     usb_c_connector = new USBCConn
 
@@ -73,8 +73,6 @@ module Blinky:
     voltage_regulator.power_out ~ micro_controller.power
     micro_controller.gpio13 ~ led_indicator.input
     micro_controller.power.gnd ~ led_indicator.gnd
-
-    led_indicator.resistor.value = 100ohm +/- 10%
 ```
 
 ### Full Projects
