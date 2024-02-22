@@ -8,6 +8,8 @@ import itertools
 import logging
 from typing import Optional
 
+from collections import defaultdict
+
 import click
 import rich
 from rich.table import Table
@@ -41,9 +43,9 @@ class DisplayEntry:
     """
     def __init__(self, net: list[list[AddrStr]]):
         self.inspect_net: list[AddrStr] = net
-        self.inspect_consumer: list[AddrStr] = []
+        self.inspect_consumer: dict[AddrStr, list[AddrStr]] = {}
         self.context_net: list[AddrStr] = []
-        self.context_consumer: list[AddrStr] = []
+        self.context_consumer: list[AddrStr, list[AddrStr]] = {}
 
 def find_nets_new(links: list[Link]) -> list[list[AddrStr]]:
     # Convert links to an adjacency list
@@ -96,8 +98,11 @@ def find_nets_new(links: list[Link]) -> list[list[AddrStr]]:
 
 #TODO: this only works for direct connections but won't work for
 # nested interfaces or signals within the interface modules
-def find_net_hits(net: list[AddrStr], links: list[Link]) -> list[AddrStr]:
-    hits = []
+def find_net_hits(net: list[AddrStr], links: list[Link]) -> dict[AddrStr, list[AddrStr]]:
+    """
+    Returns a dict of list: {node_targeted_in_the_net: [node_that_hits_it, ...]}
+    """
+    hits: dict[AddrStr, list[AddrStr]] = defaultdict(list)
     for link in links:
         source = []
         target = []
@@ -121,9 +126,9 @@ def find_net_hits(net: list[AddrStr], links: list[Link]) -> list[AddrStr]:
 
         for source, target in zip(source, target):
             if source in net:
-                hits.append(target)
+                hits[source].append(target)
             if target in net:
-                hits.append(source)
+                hits[target].append(source)
     return hits
 
 def visit_branch(tree, addr):
@@ -240,7 +245,7 @@ def inspect(build_ctxs: list[BuildContext], inspect: Optional[str], context: Opt
 
     # Help to fill the table
     bom_row_nb_counter = itertools.count()
-    def _add_row(pins, signals, intermediate, consumers):
+    def _add_row(pins, signals, intermediates, consumers):
         row_nb = next(bom_row_nb_counter)
         processed_signal = []
         for signal in signals:
@@ -248,20 +253,27 @@ def inspect(build_ctxs: list[BuildContext], inspect: Optional[str], context: Opt
                 processed_signal.append(address.get_name(get_parent(signal)) + "." + address.get_name(signal))
             else:
                 processed_signal.append(address.get_name(signal))
-        if consumers == []:
+
+        processed_intermediate = []
+        for intermediate in intermediates:
+            if intermediates[intermediate]:
+                processed_intermediate.append("[green]" + address.get_instance_section(intermediate) + "[/green]")
+            else:
+                processed_intermediate.append(address.get_instance_section(intermediate))
+        if consumers == {}:
             inspection_table.add_row(
                 f"{', '.join([address.get_name(x) for x in pins])}",
                 f"{', '.join([x for x in processed_signal])}",
-                f"{', '.join([address.get_instance_section(x) for x in intermediate])}",
-                f"{', '.join([address.get_instance_section(x) for x in consumers])}",
+                f"{', '.join([x for x in processed_intermediate])}",
+                f"[green]{', '.join([address.get_instance_section(x) for x in consumers])}[/green]",
                 style=even_row if row_nb % 2 else odd_row,
             )
         else:
             inspection_table.add_row(
                 f"{', '.join([address.get_name(x) for x in pins])}",
                 f"{', '.join([x for x in processed_signal])}",
-                f"{', '.join([address.get_instance_section(x) for x in intermediate])}",
-                f"{', '.join([address.get_instance_section(x) for x in consumers])}",
+                f"{', '.join([x for x in processed_intermediate])}",
+                f"[green]{', '.join([address.get_instance_section(x) for x in consumers])}[/green]",
                 style=even_greyed_row if row_nb % 2 else odd_greyed_row,
             )
 
@@ -269,8 +281,17 @@ def inspect(build_ctxs: list[BuildContext], inspect: Optional[str], context: Opt
     for entry in inspect_entries:
         pins = sorted(list(filter(match_pins, entry.inspect_net)))
         signals = list(filter(match_signals, entry.inspect_net))
+        is_display_inspect_consumer_hit: dict = {}
+        for hit_node in entry.inspect_consumer:
+            is_display_inspect_consumer_hit[hit_node] = False
+        is_display_context_consumer_hit: dict = {}
+        for hit_not in entry.context_consumer:
+            for hitting_node in entry.context_consumer[hit_not]:
+                is_display_context_consumer_hit[hitting_node] = False
+            is_display_inspect_consumer_hit[hit_not] = True
+
         #interface = list(filter(match_interfaces, entry.inspect_net))
-        _add_row(pins, signals, list(set(entry.inspect_consumer)), list(set(entry.context_consumer)))
+        _add_row(pins, signals, is_display_inspect_consumer_hit, is_display_context_consumer_hit)
 
 
     rich.print(inspection_table)
